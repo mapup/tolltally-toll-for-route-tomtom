@@ -27,9 +27,20 @@ request_parameters = {
 
 # Fetching the geocodes from Tomtom
 def get_geocode_from_tomtom(address):
-    url = f"{TOMTOM_API_URL}/{address}.JSON?key={TOMTOM_API_KEY}&limit=1"
-    latitude, longitude = requests.get(url).json()["results"][0]["position"].values()
-    return (latitude, longitude)
+    encoded_address = address.replace(" ", "%20")
+    url = f"{TOMTOM_GEOCODE_API_URL}/{address}.json?key={TOMTOM_API_KEY}&limit=1"
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+        latitude, longitude = data["results"][0]["position"].values()
+        return (latitude, longitude)
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching geocode from TomTom: {e}")
+        return None
+    except KeyError as e:
+        print(f"Error parsing response from TomTom: {e}")
+        return None
 
 # Extracting Polyline from TOMTOM
 def get_polyline_from_tomtom(
