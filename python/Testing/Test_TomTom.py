@@ -23,7 +23,7 @@ request_parameters = {
 
 # Fetching the geocodes from tomtom
 def get_geocode_from_tomtom(address):
-    url = f"{TOMTOM_API_KEY}/{address}.JSON?key={TOMTOM_API_KEY}&limit=1"
+    url = f"{TOMTOM_GEOCODE_API_URL}/{address}.json?key={TOMTOM_API_KEY}&limit=1"
     latitude, longitude = requests.get(url).json()["results"][0]["position"].values()
     return (latitude, longitude)
 
