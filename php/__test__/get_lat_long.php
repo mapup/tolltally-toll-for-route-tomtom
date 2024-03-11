@@ -1,6 +1,6 @@
 <?php
 function getCord($address){
-$key = 'tomtom_api_keyu';
+$key = getenv('TOMTOM_API_KEY');
 
 $url = 'https://api.tomtom.com/search/2/geocode/'.urlencode($address).'.json?key='.$key.'&limit=1';
 

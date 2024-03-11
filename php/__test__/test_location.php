@@ -1,7 +1,7 @@
 <?php
 $locdata = array(
     0 => array(
-        "from" => "Dallas,TX",
+        "from" => "Philadelphia,PA",
         "to" =>  'New York,NY'
     ),
     1 => Array ( 
