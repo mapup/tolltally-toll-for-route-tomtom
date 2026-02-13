@@ -1,3 +1,32 @@
+# System Files
+.DS_Store
+Thumbs.db
 
-ruby/.vscode/launch.json
-ruby/TestCases/.vscode/launch.json
+# Editor Directories
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Node.js
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.env
+
+# Ruby
+.bundle/
+vendor/bundle/
+ruby/vendor
+ruby/.bundle
+
+# PHP
+vendor/
+composer.lock
