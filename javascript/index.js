@@ -1,4 +1,4 @@
-const request = require("request");
+const axios = require("axios");
 const polyline = require("polyline");
 
 // REST API key from tomtom
@@ -22,7 +22,7 @@ const destination = {
 };
 
 // Explore https://tollguru.com/toll-api-docs to get best of all the parameter that TollGuru has to offer
-request_parameters = {
+const request_parameters = {
   vehicle: {
     type: "2AxlesAuto",
   },
@@ -30,6 +30,7 @@ request_parameters = {
   departure_time: "2021-01-05T09:46:08Z",
 };
 
+// Fix URL to not have duplicate '?' if possible but here we just construct it carefully
 const url = `https://api.tomtom.com/routing/1/calculateRoute/${source.latitude},${source.longitude}:${destination.latitude},${destination.longitude}/json?avoid=unpavedRoads&key=${TOMTOM_API_KEY}`;
 
 const head = (arr) => arr[0];
@@ -44,13 +45,20 @@ const getPoints = (body) =>
     .reduce(flatten)
     .map(({ latitude, longitude }) => [latitude, longitude]);
 
-const getPolyline = (body) => polyline.encode(getPoints(JSON.parse(body)));
+const getPolyline = (body) => polyline.encode(getPoints(body));
 
-const getRoute = (cb) => request.get(url, cb);
+const getRoute = async () => {
+  try {
+    const response = await axios.get(url);
+    handleRoute(response.data);
+  } catch (error) {
+    console.error(error);
+  }
+};
 
 const tollguruUrl = `${TOLLGURU_API_URL}/${POLYLINE_ENDPOINT}`;
 
-const handleRoute = (e, r, body) => {
+const handleRoute = async (body) => {
   const _polyline = getPolyline(body);
   console.log(_polyline);
 
@@ -60,20 +68,17 @@ const handleRoute = (e, r, body) => {
     ...request_parameters,
   };
 
-  request.post(
-    {
-      url: tollguruUrl,
+  try {
+    const response = await axios.post(tollguruUrl, requestBody, {
       headers: {
         "content-type": "application/json",
         "x-api-key": TOLLGURU_API_KEY,
       },
-      body: JSON.stringify(requestBody),
-    },
-    (e, r, body) => {
-      console.log(e);
-      console.log(body);
-    }
-  );
+    });
+    console.log(response.data);
+  } catch (error) {
+    console.error(error);
+  }
 };
 
-getRoute(handleRoute);
+getRoute();

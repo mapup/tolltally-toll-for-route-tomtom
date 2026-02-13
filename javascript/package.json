@@ -10,7 +10,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "polyline": "^0.2.0",
-    "request": "^2.88.2"
+    "axios": "^1.13.5",
+    "polyline": "^0.2.0"
   }
 }
