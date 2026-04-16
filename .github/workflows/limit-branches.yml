@@ -14,8 +14,13 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const MAX_BRANCHES = 2;
+            const DEFAULT_MAX_BRANCHES = 2;
+            const USER_BRANCH_LIMITS = {
+              'mapup-security-fix-bot[bot]': 35
+            };
+
             const actor = context.actor;
+            const MAX_BRANCHES = USER_BRANCH_LIMITS[actor] ?? DEFAULT_MAX_BRANCHES;
             const newBranch = context.payload.ref;
             const repo = context.repo;
 
