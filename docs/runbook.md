@@ -9,7 +9,7 @@
 ### TomTom returns empty `routes` array
 - Source or destination coordinates are likely outside routable area or in a body of water
 - Verify geocode step returned valid lat/lon before calling the routing endpoint
-- Check TomTom API status at [developer.tomtom.com/status](https://developer.tomtom.com/status)
+- Check TomTom API status at [developer.tomtom.com](https://developer.tomtom.com)
 
 ### TollGuru returns `{"message": "..."}`
 - Polyline is malformed or empty — check the encoding step
@@ -43,7 +43,7 @@ python TomTom.py 2>&1 | tee run.log
 For production use, pipe output to your existing log aggregator (CloudWatch, Datadog, etc.).
 
 API-level monitoring:
-- TomTom status: [developer.tomtom.com/status](https://developer.tomtom.com/status)
+- TomTom status: [developer.tomtom.com](https://developer.tomtom.com)
 - TollGuru status: contact TollGuru support or monitor response codes
 
 ## Cron / Scheduled Jobs
