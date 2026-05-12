@@ -1,6 +1,17 @@
 # toll-tomtom
 
-Multi-language examples for calculating toll costs on a TomTom route using the [TollGuru API](https://tollguru.com/). Implementations in Python, JavaScript, Ruby, and PHP.
+Multi-language examples showing how to enrich a [TomTom](https://docs.tomtom.com/) route with real-time toll costs using the [TollGuru API](https://tollguru.com/). Given a source and destination, the code fetches the route from TomTom, encodes it as a polyline, and queries TollGuru for toll costs across all payment types (tag, cash, credit card). Implementations in Python, JavaScript, Ruby, and PHP.
+
+## TollGuru Capabilities
+
+- [Supported geographies](https://github.com/mapup/tollguru_country_coverage/wiki/Countries-supported-by-TollGuru) — North America, Europe, Asia, Australia, Latin America
+- [Supported vehicle types](https://github.com/mapup/tollguru_vehicle_coverage/wiki/Vehicle-types-supported-by-TollGuru) — car, truck, motorcycle, bus, RV, and more
+- Payment options — tag transponder, cash, licence plate, credit card, prepaid (in local currencies)
+- Time-based tolls — pass `departure_time` for accurate rates on express lanes and time-of-day pricing
+- All toll system types — barrier, ticket system, and distance-based tolling
+- [Supported map services](https://github.com/mapup/toll-tomtom/wiki/2.-Map-platform-service-supported-by-TollGuru) — edit the `source` param to use a different mapping platform
+- [Truck parameters](https://github.com/mapup/toll-tomtom/wiki/4.-Truck-parameters-supported-by-TollGuru) — height, weight, hazardous goods, tunnel category, etc.
+- [API parameter examples](https://github.com/mapup/tollguru-api-parameter-examples/tree/main/request-bodies/02-Complete-Polyline-To-Toll) — full request body variations
 
 ## Architecture
 
@@ -16,8 +27,8 @@ Multi-language examples for calculating toll costs on a TomTom route using the [
 
 ## Prerequisites
 
-- TomTom API key
-- TollGuru API key 
+- **TomTom API key** — [sign up at developer.tomtom.com](https://developer.tomtom.com/user/login), find your key at [developer.tomtom.com/user/me/apps](https://developer.tomtom.com/user/me/apps)
+- **TollGuru API key** — [get a free key at platforms.mapup.ai/](https://platforms.mapup.ai/)
 - Language runtime for your chosen implementation:
   - Python 3.8+
   - Node.js 14+
