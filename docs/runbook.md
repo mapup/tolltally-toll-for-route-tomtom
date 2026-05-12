@@ -4,7 +4,7 @@
 
 ### `401 Unauthorized` from TomTom or TollGuru
 - Check `TOMTOM_API_KEY` / `TOLLGURU_API_KEY` env vars are set and not expired
-- Regenerate keys at [developer.tomtom.com](https://developer.tomtom.com/user/me/apps) or [tollguru.com/developers](https://tollguru.com/developers/get-api-key)
+- Regenerate keys at [developer.tomtom.com](https://developer.tomtom.com) or [tollguru.com](https://tollguru.com)
 
 ### TomTom returns empty `routes` array
 - Source or destination coordinates are likely outside routable area or in a body of water
@@ -13,7 +13,7 @@
 
 ### TollGuru returns `{"message": "..."}`
 - Polyline is malformed or empty — check the encoding step
-- Vehicle type string is invalid — see [TollGuru vehicle types](https://tollguru.com/developers/docs/#vehicle-types)
+- Vehicle type string is invalid — see [TollGuru vehicle types](https://github.com/mapup/tollguru-tolltally-vehicle-coverage-api/wiki/Vehicle-types-supported-by-TollGuru)
 - Route has no tolls in TollGuru's database — response `route.costs` will be `{}`; this is expected, not an error
 
 ### Python `KeyError` / `IndexError` on geocode step

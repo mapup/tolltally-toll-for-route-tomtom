@@ -1,6 +1,6 @@
 # toll-tomtom
 
-Multi-language examples for calculating toll costs on a TomTom route using the [TollGuru API](https://tollguru.com/developers/docs/). Implementations in Python, JavaScript, Ruby, and PHP.
+Multi-language examples for calculating toll costs on a TomTom route using the [TollGuru API](https://tollguru.com/). Implementations in Python, JavaScript, Ruby, and PHP.
 
 ## Architecture
 
@@ -16,8 +16,8 @@ Multi-language examples for calculating toll costs on a TomTom route using the [
 
 ## Prerequisites
 
-- TomTom API key — [developer.tomtom.com](https://developer.tomtom.com/user/me/apps)
-- TollGuru API key — [tollguru.com/developers/get-api-key](https://tollguru.com/developers/get-api-key)
+- TomTom API key
+- TollGuru API key 
 - Language runtime for your chosen implementation:
   - Python 3.8+
   - Node.js 14+
