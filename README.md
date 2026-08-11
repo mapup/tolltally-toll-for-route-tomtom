@@ -37,6 +37,14 @@ Multi-language examples showing how to enrich a [TomTom](https://docs.tomtom.com
 
 ## Local Setup
 
+Run this once after cloning — it wires the tracked git hooks and installs [gitleaks](https://github.com/gitleaks/gitleaks), so no commit containing a secret can be created:
+
+```bash
+./hooks/install.sh
+```
+
+It is idempotent, and needs re-running after a fresh clone or a new git worktree. The `javascript/` package runs it automatically via `npm install`. The [gitleaks CI workflow](.github/workflows/gitleaks.yml) is the backstop for anyone who skips it.
+
 Set environment variables first:
 
 ```bash
