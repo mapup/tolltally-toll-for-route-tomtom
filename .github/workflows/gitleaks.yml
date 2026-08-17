@@ -11,6 +11,10 @@ on:
         required: false
         default: "Manual security scan"
 
+permissions:
+  contents: read
+  security-events: write   # required by upload-sarif
+
 jobs:
   gitleaks:
     name: Scan for secrets
@@ -25,73 +29,37 @@ jobs:
           GITLEAKS_VERSION=$(curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest | grep '"tag_name"' | sed 's/.*"v\(.*\)".*/\1/')
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar -xz -C /usr/local/bin gitleaks
 
+      # The scan records its exit code instead of failing here, so the reports
+      # still reach the SARIF upload and the webhook. The job fails at the end.
       - name: Run gitleaks
+        id: scan
         run: |
-          gitleaks detect --source . --verbose --redact --report-format sarif --report-path gitleaks-report.sarif || true
-          gitleaks detect --source . --verbose --redact --report-format json --report-path gitleaks-report.json || true
+          set +e
+          gitleaks detect --source . --verbose --redact --report-format sarif --report-path gitleaks-report.sarif
+          gitleaks detect --source . --verbose --redact --report-format json --report-path gitleaks-report.json
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
 
-      # - name: Upload SARIF report
-      #   if: always()
-      #   uses: github/codeql-action/upload-sarif@v3
-      #   with:
-      #     sarif_file: gitleaks-report.sarif
+      - name: Upload SARIF report
+        if: always()
+        continue-on-error: true   # a reporting failure must not mask the scan result
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gitleaks-report.sarif
 
       - name: Send JSON to endpoint
         if: always()
         run: |
+          if [ ! -f gitleaks-report.json ]; then
+            echo "::warning::no gitleaks-report.json to send — the scan produced no report."
+            exit 0
+          fi
           curl -X POST "${{ secrets.SAST_GITLEAK_WEBHOOK_URL }}?branch=${{ github.head_ref || github.ref_name }}&&repo=${{ github.event.repository.name }}" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${{ secrets.SAST_WEBHOOK_TOKEN }}" \
             -d @gitleaks-report.json
 
-# name: Gitleaks Secret Scan
-# on:
-#   pull_request:
-#     branches: [main, master]
-#   schedule:
-#     - cron: '0 3 * * 1'
-#   workflow_dispatch:
-
-# jobs:
-#   gitleaks:
-#     name: Scan for secrets
-#     runs-on: ubuntu-latest
-#     steps:
-#       - uses: actions/checkout@v4
-#         with:
-#           fetch-depth: 0
-
-#       - name: Install gitleaks
-#         run: |
-#           GITLEAKS_VERSION=$(curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest | grep '"tag_name"' | sed 's/.*"v\(.*\)".*/\1/')
-#           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar -xz -C /usr/local/bin gitleaks
-
-#       - name: Run gitleaks
-#         run: gitleaks detect --source . --verbose --redact --report-format sarif --report-path gitleaks-report.sarif
-
-#       - name: Upload SARIF report
-#         if: always()
-#         uses: github/codeql-action/upload-sarif@v3
-#         with:
-#           sarif_file: gitleaks-report.sarif
-
-# name: Gitleaks Secret Scan
-# on:
-#   pull_request:
-#     branches: [main, master]
-#   schedule:
-#     - cron: '0 3 * * 1'  # Weekly Monday 3am UTC
-#   workflow_dispatch:       # Allow manual trigger
-
-# jobs:
-#   gitleaks:
-#     name: Scan for secrets
-#     runs-on: ubuntu-latest
-#     steps:
-#       - uses: actions/checkout@v4
-#         with:
-#           fetch-depth: 0
-#       - uses: gitleaks/gitleaks-action@v2
-#         env:
-#           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-#           GITLEAKS_ENABLE_COMMENTS: false
+      - name: Fail if secrets were found
+        if: steps.scan.outputs.exit_code != '0'
+        run: |
+          echo "::error::gitleaks found secrets — see the scan log above for file, line and commit."
+          exit 1
