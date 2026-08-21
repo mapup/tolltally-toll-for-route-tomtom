@@ -57,6 +57,13 @@ jobs:
           BRANCH: ${{ github.head_ref || github.ref_name }}
           REPO_NAME: ${{ github.event.repository.name }}
         run: |
+          # Dependabot-triggered runs receive no secrets, so WEBHOOK_URL is empty
+          # and the POST would go to a malformed "?branch=..." URL (curl exit 3),
+          # failing the job even when gitleaks found nothing. Skip instead.
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "SAST_GITLEAK_WEBHOOK_URL not set (expected on dependabot runs) — skipping report upload."
+            exit 0
+          fi
           if [ ! -f gitleaks-report.json ]; then
             echo "::warning::no gitleaks-report.json to send — the scan produced no report."
             exit 0
