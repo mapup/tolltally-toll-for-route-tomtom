@@ -73,7 +73,17 @@ jobs:
             rm -f /tmp/lc-prod.json /tmp/lc-all.json
             (
               cd "$dir" || exit 0
-              npm ci --ignore-scripts 2>/dev/null || npm install --ignore-scripts 2>/dev/null || true
+              # Several packages here have peer-dependency conflicts, so both
+              # `npm ci` and plain `npm install` abort with ERESOLVE. Without the
+              # --legacy-peer-deps tier no node_modules is produced and
+              # license-checker then reports only the package itself — a green
+              # run carrying an empty inventory, which reads as "no dependencies"
+              # rather than "we failed to look". Warn loudly if all tiers fail.
+              if ! npm ci --ignore-scripts >/dev/null 2>&1 \
+                && ! npm ci --ignore-scripts --legacy-peer-deps >/dev/null 2>&1 \
+                && ! npm install --ignore-scripts --legacy-peer-deps >/dev/null 2>&1; then
+                echo "::warning::npm install failed in $dir — its dependencies are NOT in the license inventory"
+              fi
               license-checker --json --out /tmp/lc-prod.json --production 2>/dev/null || true
               license-checker --json --out /tmp/lc-all.json 2>/dev/null || true
             ) || true
