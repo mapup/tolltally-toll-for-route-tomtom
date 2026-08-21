@@ -57,17 +57,43 @@ jobs:
         if: hashFiles('**/package.json') != ''
         run: |
           npm install --global license-checker@25.0.1
-          if [ -f package-lock.json ] || [ -f package.json ]; then
-            npm ci --ignore-scripts 2>/dev/null || npm install --ignore-scripts 2>/dev/null || true
-            license-checker --json --out licenses-node-prod.json --production || true
-            license-checker --json --out licenses-node-all.json || true
-          fi
+          # This repo keeps its package.json files in subdirectories, so the
+          # previous root-only pass silently reported zero npm dependencies.
+          # Walk every manifest and merge the per-package results, namespacing
+          # each entry by its directory so same-named deps don't collide.
+          # Every step is failure-tolerant: one unresolvable package must not
+          # lose the inventory for all the others.
+          echo '{}' > licenses-node-prod.json
+          echo '{}' > licenses-node-all.json
+          find . -name package.json -not -path "*/node_modules/*" -not -path "*/.git/*" \
+            > /tmp/npm-manifests.txt
+          while read -r pkg; do
+            dir=$(dirname "$pkg")
+            echo "Inventorying npm licenses in: $dir"
+            rm -f /tmp/lc-prod.json /tmp/lc-all.json
+            (
+              cd "$dir" || exit 0
+              npm ci --ignore-scripts 2>/dev/null || npm install --ignore-scripts 2>/dev/null || true
+              license-checker --json --out /tmp/lc-prod.json --production 2>/dev/null || true
+              license-checker --json --out /tmp/lc-all.json 2>/dev/null || true
+            ) || true
+            for scope in prod all; do
+              if [ -s "/tmp/lc-$scope.json" ]; then
+                jq -s --arg d "$dir" \
+                  '.[0] * (.[1] | with_entries(.key = $d + "::" + .key))' \
+                  "licenses-node-$scope.json" "/tmp/lc-$scope.json" \
+                  > "/tmp/merged-$scope.json" 2>/dev/null \
+                  && mv "/tmp/merged-$scope.json" "licenses-node-$scope.json" || true
+              fi
+            done
+          done < /tmp/npm-manifests.txt
+          echo "npm packages inventoried (all): $(jq 'length' licenses-node-all.json)"
 
       # --- Go: go-licenses, CSV output (runbook §7.1) ---
       - name: Go license inventory
         if: hashFiles('**/go.mod') != ''
         run: |
-          go install github.com/google/go-licenses@v2.0.1
+          go install github.com/google/go-licenses/v2@v2.0.1
           find . -name "go.mod" -not -path "*/.git/*" | while read -r gomod; do
             dir=$(dirname "$gomod")
             module=$(head -1 "$gomod" | awk '{print $2}')

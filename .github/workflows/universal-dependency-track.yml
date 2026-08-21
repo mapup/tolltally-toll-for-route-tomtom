@@ -16,6 +16,10 @@ on:
   # (GitHub trigger filters can't express "the default branch" dynamically);
   # PRs into any branch are scanned.
   push:
+    # Non-default-branch pushes are gated off by the job-level `if`
+    # anyway; filtering here means they never create a `skipped` run,
+    # which the coverage tracker reads as a failed scan.
+    branches: [main]
   pull_request:
   schedule:
     # Run daily at 9am UTC

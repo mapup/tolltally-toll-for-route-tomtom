@@ -19,6 +19,10 @@ on:
   # No branch filter: repos differ in default-branch names. Pushes are
   # gated to the repo's actual default branch by the job-level `if` below.
   push:
+    # Non-default-branch pushes are gated off by the job-level `if`
+    # anyway; filtering here means they never create a `skipped` run,
+    # which the coverage tracker reads as a failed scan.
+    branches: [main]
   schedule:
     - cron: '30 9 * * *'   # daily, offset from the Trivy SBOM run at 9:00
   workflow_dispatch:
