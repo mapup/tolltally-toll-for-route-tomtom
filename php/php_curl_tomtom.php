@@ -30,8 +30,8 @@ $url=$TOMTOM_API_URL.'/'.$source_latitude.','.$source_longitude.':'.$destination
 // Connection
 $tomtom = curl_init();
 
-curl_setopt($tomtom, CURLOPT_SSL_VERIFYHOST, false);
-curl_setopt($tomtom, CURLOPT_SSL_VERIFYPEER, false);
+curl_setopt($tomtom, CURLOPT_SSL_VERIFYHOST, 2);
+curl_setopt($tomtom, CURLOPT_SSL_VERIFYPEER, true);
 
 curl_setopt($tomtom, CURLOPT_URL, $url);
 curl_setopt($tomtom, CURLOPT_RETURNTRANSFER, true);
@@ -58,8 +58,8 @@ $polyline_tomtom = Polyline::encode($new_leg_points);
 // Using TollGuru API
 $curl = curl_init();
 
-curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, false);
-curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
+curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, 2);
+curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, true);
 
 $postdata = array(
 	"source" => "gmaps",

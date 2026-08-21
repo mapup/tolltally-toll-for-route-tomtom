@@ -118,7 +118,6 @@ Source/destination and vehicle type are set as constants in each implementation'
 
 - No caching — every run makes live API calls
 - No retry logic on transient failures
-- PHP disables SSL peer/host verification (`CURLOPT_SSL_VERIFYPEER`, `CURLOPT_SSL_VERIFYHOST` set to `false`)
 - Ruby Gemfile locks to Ruby 2.6.10
 - Single route per invocation; no batch mode in main scripts (test harness does batch via CSV)
 - TollGuru returns costs for the first route leg only if multiple legs exist

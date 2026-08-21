@@ -59,20 +59,36 @@ tomtom_coordinates = json_parsed['routes'].map { |x| x['legs'] }.pop.map{ |y| y[
 google_encoded_polyline = FastPolylines.encode(tomtom_coordinates)
 
 # Sending POST request to TollGuru
-tollguru_url = "#{TOLLGURU_API_URL}/#{POLYLINE_ENDPOINT}"
+#
+# This used to shell out to curl. Two problems with that: the API key sat in
+# the command line, where any user on the box could read it out of `ps`, and
+# the request body had to be spooled through a file in the working directory.
+# Net::HTTP is already required and used for both TomTom calls above, so the
+# key travels as a header and the body never touches disk.
+tollguru_uri = URI("#{TOLLGURU_API_URL}/#{POLYLINE_ENDPOINT}")
 
 body = {
   'source' => "tomtom",
   'polyline' => google_encoded_polyline
 }.merge(request_parameters)
 
-File.write('tollguru_request_body.json', body.to_json)
+puts "Sending request to TollGuru..."
+request = Net::HTTP::Post.new(tollguru_uri)
+request['Content-Type'] = 'application/json'
+request['x-api-key'] = TOLLGURU_API_KEY
+request.body = body.to_json
 
-puts "Sending request to TollGuru via curl..."
-command = "curl -s -X POST #{tollguru_url} -H 'Content-Type: application/json' -H 'x-api-key: #{TOLLGURU_API_KEY}' -d @tollguru_request_body.json"
-response_body = `#{command}`
+response_tollguru = Net::HTTP.start(tollguru_uri.hostname, tollguru_uri.port,
+                                    use_ssl: tollguru_uri.scheme == 'https') do |http|
+  http.request(request)
+end
+response_body = response_tollguru.body
 
-File.delete('tollguru_request_body.json')
+# curl -s swallowed HTTP errors and handed back a body that failed to parse,
+# so surface the status the way the TomTom call above does.
+unless response_tollguru.is_a?(Net::HTTPSuccess)
+  puts "TollGuru API Error: #{response_tollguru.code} #{response_tollguru.message}"
+end
 
 begin
   tollguru_response = JSON.parse(response_body)

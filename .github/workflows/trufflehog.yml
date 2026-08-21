@@ -34,13 +34,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Source Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
       - name: Install TruffleHog
+        # Was: curl .../main/scripts/install.sh | sh
+        # That executes whatever is on `main` at the moment the job runs, so a
+        # push to that script — or a compromise of raw.githubusercontent.com —
+        # runs as root on the runner. Pin the release and verify the checksum
+        # so the bytes are known before anything executes.
+        env:
+          TRUFFLEHOG_VERSION: 3.97.0
+          TRUFFLEHOG_SHA256: 62224de2f9dd7cd418800feb953760a302ed2f82a7c547fe1146a4874fb179e4
         run: |
-          curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin
+          set -euo pipefail
+          tarball="trufflehog_${TRUFFLEHOG_VERSION}_linux_amd64.tar.gz"
+          curl -sSfL -o "$tarball" \
+            "https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VERSION}/${tarball}"
+          echo "${TRUFFLEHOG_SHA256}  ${tarball}" | sha256sum -c -
+          tar -xzf "$tarball" -C /usr/local/bin trufflehog
+          rm -f "$tarball"
+          trufflehog --version
 
       - name: Run TruffleHog
         run: |
@@ -81,7 +96,7 @@ jobs:
 
       - name: Archive TruffleHog report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: trufflehog-report
           path: trufflehog-report.json

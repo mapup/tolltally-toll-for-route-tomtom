@@ -21,7 +21,9 @@
 - Use a more specific address or pass lat/lon directly instead of geocoding
 
 ### PHP SSL errors
-- PHP implementation disables SSL verification — if this causes issues in hardened environments, remove `CURLOPT_SSL_VERIFYHOST`/`CURLOPT_SSL_VERIFYPEER` overrides from `php_curl_tomtom.php`
+- The PHP implementation verifies TLS certificates (`CURLOPT_SSL_VERIFYPEER` true, `CURLOPT_SSL_VERIFYHOST` 2). A failure here means the chain genuinely did not validate — do not turn verification off to work around it
+- Usual cause is a missing or stale CA bundle: check `curl.cainfo`/`openssl.cafile` in `php.ini` and that the system CA store is current
+- Behind a TLS-inspecting proxy, add the proxy's CA to the trust store rather than disabling verification
 
 ### Ruby `LoadError` / bundler issues
 - Run `bundle install` inside the `ruby/` directory
