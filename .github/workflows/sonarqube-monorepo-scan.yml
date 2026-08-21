@@ -54,7 +54,11 @@ jobs:
 
       - name: Log manual run reason
         if: github.event_name == 'workflow_dispatch'
-        run: echo "Manual trigger - ${{ github.event.inputs.reason }}"
+        # workflow_dispatch inputs are attacker-supplied text; pass through env
+        # rather than interpolating them into the script body.
+        env:
+          RUN_REASON: ${{ github.event.inputs.reason }}
+        run: echo "Manual trigger - $RUN_REASON"
 
       - name: SonarQube scan
         uses: SonarSource/sonarqube-scan-action@299e4b793aaa83bf2aba7c9c14bedbb485688ec4 # v7.1.0
