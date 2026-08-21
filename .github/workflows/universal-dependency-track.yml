@@ -170,7 +170,26 @@ jobs:
               componentsWithLicenses: ([.components[] | select(.licenses)] | length)
           }'
 
+      - name: Check Dependency-Track credentials
+        id: dt_check
+        env:
+          DEPENDENCYTRACK_API_KEY: ${{ secrets.DEPENDENCYTRACK_API_KEY }}
+        run: |
+          if [ -n "$DEPENDENCYTRACK_API_KEY" ]; then
+            echo "upload=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "DEPENDENCYTRACK_API_KEY not set — Dependency-Track upload will be skipped."
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Upload BOM to Dependency-Track
+        # Two reasons this must not run on pull requests:
+        #  1. projectversion below is hardcoded to the default branch, so a PR
+        #     upload overwrites the default-branch SBOM in Dependency-Track
+        #     with the contents of an unmerged branch.
+        #  2. dependabot-triggered runs get no secrets, so the API key is empty
+        #     and the upload 401s — failing a job whose scan actually succeeded.
+        if: github.event_name != 'pull_request' && steps.dt_check.outputs.upload == 'true'
         uses: DependencyTrack/gh-upload-sbom@48feab3080ff9e8f51f4d21861d9fc914eb744f5 # v3.1.0
         with:
           serverhostname: '44.194.0.211'
