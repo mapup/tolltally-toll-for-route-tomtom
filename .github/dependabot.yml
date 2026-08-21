@@ -1,0 +1,57 @@
+# Actions are now pinned to commit SHAs, which stops an upstream tag being
+# repointed under us — but also freezes them, including on security releases.
+# Dependabot re-resolves each pin weekly and opens a PR with the new SHA and
+# an updated version comment, so the pins stay current without being mutable.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # Hold back releases for a week. A compromised maintainer account is
+    # usually caught within days, and Dependabot exempts security advisories
+    # from the cooldown, so genuine fixes still land immediately.
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: npm
+    directory: /javascript
+    schedule:
+      interval: weekly
+    # Hold back releases for a week. A compromised maintainer account is
+    # usually caught within days, and Dependabot exempts security advisories
+    # from the cooldown, so genuine fixes still land immediately.
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore
+
+  - package-ecosystem: pip
+    directory: /python
+    schedule:
+      interval: weekly
+    # Hold back releases for a week. A compromised maintainer account is
+    # usually caught within days, and Dependabot exempts security advisories
+    # from the cooldown, so genuine fixes still land immediately.
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore
+
+  - package-ecosystem: bundler
+    directory: /ruby
+    schedule:
+      interval: weekly
+    # Hold back releases for a week. A compromised maintainer account is
+    # usually caught within days, and Dependabot exempts security advisories
+    # from the cooldown, so genuine fixes still land immediately.
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore
