@@ -1,4 +1,4 @@
-name: License Inventory (npm / Go / Python)
+name: License Inventory (npm / Python)
 
 # PORTABLE TEMPLATE — copy into
 # <your-repo>/.github/workflows/license-inventory.yml as-is. Adapted from
@@ -9,9 +9,15 @@ name: License Inventory (npm / Go / Python)
 # "inventory aids" than ScanCode's source-level deep pass, reading package
 # manifests rather than scanning file contents. Pinned installs, not
 # ad-hoc `npx` downloads at scan time, per the same section. Covers three
-# of the runbook's tools in one file: license-checker (npm), go-licenses
-# (Go), pip-licenses (Python) — each step no-ops when its ecosystem isn't
-# present, so this is safe to add to any repo.
+# two of the runbook's tools in one file: license-checker (npm) and
+# pip-licenses (Python) — each step no-ops when its ecosystem isn't
+# present.
+#
+# NO-GO VARIANT: this is license-inventory.yml with the Go steps removed,
+# for repos that have no go.mod. The Go steps were guarded by
+# hashFiles('**/go.mod') and so never ran there; carrying them only added
+# dead config. If a repo later adds Go, copy the full
+# license-inventory.yml over this file.
 #
 # Optional secrets (steps skip gracefully when unset):
 #   GCHAT_WEBHOOK_URL - failure alerts
@@ -40,12 +46,6 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Setup Go (if needed)
-        if: hashFiles('**/go.mod') != ''
-        uses: actions/setup-go@v5
-        with:
-          go-version: 'stable'
-
       - name: Setup Python (if needed)
         if: hashFiles('**/requirements.txt', '**/pyproject.toml', '**/setup.py') != ''
         uses: actions/setup-python@v5
@@ -57,62 +57,13 @@ jobs:
         if: hashFiles('**/package.json') != ''
         run: |
           npm install --global license-checker@25.0.1
-          # This repo keeps its package.json files in subdirectories, so the
-          # previous root-only pass silently reported zero npm dependencies.
-          # Walk every manifest and merge the per-package results, namespacing
-          # each entry by its directory so same-named deps don't collide.
-          # Every step is failure-tolerant: one unresolvable package must not
-          # lose the inventory for all the others.
-          echo '{}' > licenses-node-prod.json
-          echo '{}' > licenses-node-all.json
-          find . -name package.json -not -path "*/node_modules/*" -not -path "*/.git/*" \
-            > /tmp/npm-manifests.txt
-          while read -r pkg; do
-            dir=$(dirname "$pkg")
-            echo "Inventorying npm licenses in: $dir"
-            rm -f /tmp/lc-prod.json /tmp/lc-all.json
-            (
-              cd "$dir" || exit 0
-              # Several packages here have peer-dependency conflicts, so both
-              # `npm ci` and plain `npm install` abort with ERESOLVE. Without the
-              # --legacy-peer-deps tier no node_modules is produced and
-              # license-checker then reports only the package itself — a green
-              # run carrying an empty inventory, which reads as "no dependencies"
-              # rather than "we failed to look". Warn loudly if all tiers fail.
-              if ! npm ci --ignore-scripts >/dev/null 2>&1 \
-                && ! npm ci --ignore-scripts --legacy-peer-deps >/dev/null 2>&1 \
-                && ! npm install --ignore-scripts --legacy-peer-deps >/dev/null 2>&1; then
-                echo "::warning::npm install failed in $dir — its dependencies are NOT in the license inventory"
-              fi
-              license-checker --json --out /tmp/lc-prod.json --production 2>/dev/null || true
-              license-checker --json --out /tmp/lc-all.json 2>/dev/null || true
-            ) || true
-            for scope in prod all; do
-              if [ -s "/tmp/lc-$scope.json" ]; then
-                jq -s --arg d "$dir" \
-                  '.[0] * (.[1] | with_entries(.key = $d + "::" + .key))' \
-                  "licenses-node-$scope.json" "/tmp/lc-$scope.json" \
-                  > "/tmp/merged-$scope.json" 2>/dev/null \
-                  && mv "/tmp/merged-$scope.json" "licenses-node-$scope.json" || true
-              fi
-            done
-          done < /tmp/npm-manifests.txt
-          echo "npm packages inventoried (all): $(jq 'length' licenses-node-all.json)"
+          if [ -f package-lock.json ] || [ -f package.json ]; then
+            npm ci --ignore-scripts 2>/dev/null || npm install --ignore-scripts 2>/dev/null || true
+            license-checker --json --out licenses-node-prod.json --production || true
+            license-checker --json --out licenses-node-all.json || true
+          fi
 
       # --- Go: go-licenses, CSV output (runbook §7.1) ---
-      - name: Go license inventory
-        if: hashFiles('**/go.mod') != ''
-        run: |
-          go install github.com/google/go-licenses/v2@v2.0.1
-          find . -name "go.mod" -not -path "*/.git/*" | while read -r gomod; do
-            dir=$(dirname "$gomod")
-            module=$(head -1 "$gomod" | awk '{print $2}')
-            echo "Reporting licenses for module: $module (in $dir)"
-            (cd "$dir" && go mod download 2>/dev/null; "$(go env GOPATH)/bin/go-licenses" report ./... > "/tmp/licenses-go-$(echo "$dir" | tr '/' '_').csv" 2>/dev/null || true)
-          done
-          cat /tmp/licenses-go-*.csv > licenses-go.csv 2>/dev/null || touch licenses-go.csv
-
-      # --- Python: pip-licenses, JSON output (runbook §7.1) ---
       - name: Python license inventory
         if: hashFiles('**/requirements.txt', '**/pyproject.toml', '**/setup.py') != ''
         run: |
@@ -129,7 +80,6 @@ jobs:
           mkdir -p license-reports
           mv licenses-node-prod.json license-reports/ 2>/dev/null || true
           mv licenses-node-all.json license-reports/ 2>/dev/null || true
-          mv licenses-go.csv license-reports/ 2>/dev/null || true
           mv licenses-py.json license-reports/ 2>/dev/null || true
           ls -la license-reports/ || echo "No license reports generated (no matching ecosystem in this repo)."
 
