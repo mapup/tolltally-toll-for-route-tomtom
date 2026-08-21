@@ -26,8 +26,22 @@ jobs:
 
       - name: Install gitleaks
         run: |
-          GITLEAKS_VERSION=$(curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest | grep '"tag_name"' | sed 's/.*"v\(.*\)".*/\1/')
-          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar -xz -C /usr/local/bin gitleaks
+          # The old one-liner (grep + greedy sed) depended on the GitHub API
+          # returning pretty-printed JSON. When it returns compact JSON the
+          # greedy .* swallows the rest of the payload, GITLEAKS_VERSION becomes
+          # a JSON fragment and the download URL is malformed — curl (3) "bad
+          # range specification", then tar fails on the truncated stream.
+          # Parse with jq, sanity-check the result, and pin a fallback.
+          GITLEAKS_VERSION=$(curl -sSfL --retry 5 --retry-delay 3 --retry-all-errors --connect-timeout 15 -H 'Accept: application/vnd.github+json' \
+            https://api.github.com/repos/gitleaks/gitleaks/releases/latest \
+            | jq -r '.tag_name // empty' | sed 's/^v//')
+          case "$GITLEAKS_VERSION" in
+            ''|*[!0-9.]*)
+              echo "::warning::could not resolve latest gitleaks version — using pinned fallback."
+              GITLEAKS_VERSION=8.30.1 ;;
+          esac
+          echo "Installing gitleaks v${GITLEAKS_VERSION}"
+          curl -sSfL --retry 5 --retry-delay 3 --retry-all-errors --connect-timeout 15 "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar -xz -C /usr/local/bin gitleaks
 
       # The scan records its exit code instead of failing here, so the reports
       # still reach the SARIF upload and the webhook. The job fails at the end.
