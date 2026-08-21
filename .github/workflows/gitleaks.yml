@@ -20,7 +20,7 @@ jobs:
     name: Scan for secrets
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
@@ -42,7 +42,7 @@ jobs:
       - name: Upload SARIF report
         if: always()
         continue-on-error: true   # a reporting failure must not mask the scan result
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@f3712979fa5f215279b101dd0a2e3bdfb4353324 # v3.37.7
         with:
           sarif_file: gitleaks-report.sarif
 
