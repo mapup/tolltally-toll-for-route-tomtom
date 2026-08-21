@@ -50,7 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           tarball="trufflehog_${TRUFFLEHOG_VERSION}_linux_amd64.tar.gz"
-          curl -sSfL -o "$tarball" \
+          curl -sSfL --retry 5 --retry-delay 3 --retry-all-errors --connect-timeout 15 -o "$tarball" \
             "https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VERSION}/${tarball}"
           echo "${TRUFFLEHOG_SHA256}  ${tarball}" | sha256sum -c -
           tar -xzf "$tarball" -C /usr/local/bin trufflehog
