@@ -71,3 +71,17 @@ jobs:
             -Dsonar.sources=.
             -Dsonar.exclusions=${{ matrix.exclusions }}
             ${{ matrix.extraArgs }}
+
+      - name: Update project sheet tab
+        if: always()
+        continue-on-error: true
+        run: |
+          sleep 120
+          RESPONSE=$(curl -s -L \
+            "${{ secrets.APPS_SCRIPT_WEB_APP_URL }}?project=${{ matrix.projectKey }}")
+          echo "Sheet update response: $RESPONSE"
+          if [ "$RESPONSE" = "ok" ]; then
+            echo "✅ Sheet updated successfully for ${{ matrix.projectKey }}"
+          else
+            echo "⚠️ Sheet update may have failed for ${{ matrix.projectKey }}: $RESPONSE"
+          fi
