@@ -288,16 +288,11 @@ jobs:
         if: github.event_name != 'pull_request' && steps.dt_check.outputs.upload == 'true'
         uses: DependencyTrack/gh-upload-sbom@48feab3080ff9e8f51f4d21861d9fc914eb744f5 # v3.1.0
         with:
-          # ⚠️  FLAG (2026-08-27): this posts the SBOM *and* the
-          # DEPENDENCYTRACK_API_KEY to a bare IP over cleartext HTTP.
-          # tollguru-engineering-utils already points at the TLS endpoint
-          # 'deptrack-api.mapup.ai:443'. This repo (and polyline, and both
-          # mobile apps) were never migrated. Switching needs confirmation
-          # that the DNS name resolves for this project, so it is flagged
-          # here rather than changed blind.
-          serverhostname: '44.194.0.211'
-          port: '8091'
-          protocol: 'http'
+          # Switched to the TLS endpoint 2026-08-27, now that engineering-utils,
+          # navguru-mobile-app and polyline are all confirmed using it.
+          serverhostname: 'deptrack-api.mapup.ai'
+          port: '443'
+          protocol: 'https'
           apikey: ${{ secrets.DEPENDENCYTRACK_API_KEY }}
           projectname: ${{ github.event.repository.name }}
           projectversion: 'main'
