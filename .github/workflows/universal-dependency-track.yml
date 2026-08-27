@@ -135,6 +135,49 @@ jobs:
           echo "✅ Dependency installation complete"
         continue-on-error: true
 
+      # ── Added 2026-08-27 (license-dashboard triage) ──────────────────────────
+      # Trivy's requirements.txt parser only records dependencies pinned with
+      # "==". python/requirements.txt in this repo uses ">=" for all three
+      # entries (requests, polyline, python-dotenv), so Trivy parsed the file
+      # and emitted ZERO Python components — the whole Python dependency tree,
+      # direct and transitive, was invisible to the SBOM and to Dependency-Track.
+      # That is not visible on the licence dashboard as a finding; it shows up
+      # as an absence, which is the more dangerous failure mode.
+      #
+      # Resolving into a throwaway venv and freezing the result back over the
+      # manifest (in the CI workspace only — never committed) gives Trivy the
+      # "==" pins it needs, including transitive packages. Verified locally:
+      # 0 components before, 6 after, for a 2-line requirements.txt.
+      - name: Pin Python manifests for SBOM resolution
+        if: hashFiles('**/requirements.txt') != ''
+        run: |
+          set -u
+          find . -name requirements.txt -not -path "*/.git/*" -not -path "*/node_modules/*" \
+                 -not -path "*/venv/*" -not -path "*/.venv/*" | while read -r req; do
+            dir=$(dirname "$req")
+            echo "🐍 Pinning $req"
+            rm -rf /tmp/sbomvenv
+            if ! python3 -m venv /tmp/sbomvenv; then
+              echo "   ⚠️  could not create venv — leaving $req unpinned"
+              continue
+            fi
+            if ! /tmp/sbomvenv/bin/pip install -q --disable-pip-version-check -r "$req"; then
+              echo "   ⚠️  pip install failed — leaving $req unpinned so the"
+              echo "      original (unresolved) manifest is still scanned."
+              continue
+            fi
+            /tmp/sbomvenv/bin/pip freeze --exclude-editable \
+              | grep -vE '^(pip|setuptools|wheel|pkg[-_]resources)==' > "$req.pinned"
+            if [ -s "$req.pinned" ]; then
+              mv "$req.pinned" "$req"
+              echo "   ✅ pinned $(wc -l < "$req") packages"
+            else
+              rm -f "$req.pinned"
+              echo "   ⚠️  freeze produced nothing — left unpinned"
+            fi
+          done
+          rm -rf /tmp/sbomvenv
+
       - name: Generate SBOM with Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -143,32 +186,85 @@ jobs:
           output: bom-raw.json
           scanners: license
           license-full: true
+          # Java build files vendored INSIDE an npm package are not dependencies
+          # we resolve. serverless ships a Java runtime wrapper at
+          # node_modules/serverless/lib/plugins/aws/invoke-local/runtime-wrappers/java/pom.xml;
+          # Trivy parsed it and emitted 9 phantom Maven components
+          # (com.serverless:invoke-bridge plus the jackson/joda-time/aws-lambda
+          # deps it declares). None are installed, none are on Maven Central,
+          # and invoke-bridge has no licence — so it surfaced as an unresolvable
+          # "No License Metadata" finding on something we do not ship.
+          # Verified: this removes exactly those 9 and leaves all 1692 npm
+          # components untouched.
+          skip-files: '**/node_modules/**/pom.xml'
 
+      # ── Why this step changed (2026-08-27, license-dashboard triage) ─────────
+      # Trivy emits the *manifest it scanned* as a component. When the manifest
+      # is not at the repo root it is emitted PATH-PREFIXED — "ruby/Gemfile.lock",
+      # "polygons_monitor/requirements.txt", "cloudwatch_loggroup_retention/go.mod".
+      # The previous filter compared `.name` against bare filenames ("go.mod"),
+      # so it only ever stripped root-level manifests and every nested one
+      # survived into Dependency-Track as a HIGH "No License Metadata" finding.
+      # In this repo that was `ruby/Gemfile.lock` — 1 of the 3 HIGH findings on
+      # the org licence sheet, and not a real package at all.
+      # Matching on the basename fixes it. Dropped entries are printed rather
+      # than silently discarded, so an over-broad filter is visible in the log.
       - name: Clean and validate SBOM
         run: |
-          echo "🧹 Cleaning SBOM (removing lock files and false positives)..."
-          cat bom-raw.json | jq '
-            .components |= map(select(
-              .name != "package-lock.json" and
-              .name != "yarn.lock" and
-              .name != "pnpm-lock.yaml" and
-              .name != "go.mod" and
-              .name != "go.sum" and
-              .name != "uv.lock" and
-              .name != "poetry.lock" and
-              .name != "Pipfile.lock" and
-              .name != "Cargo.lock" and
-              .name != "composer.lock" and
-              (.name | test(".*lock\\.json$") | not)
-            ))
-          ' > bom.json
+          echo "🧹 Cleaning SBOM (removing manifest/lock pseudo-components)..."
+          jq '
+            def basename: split("/") | last;
+            [
+              "package-lock.json","npm-shrinkwrap.json","yarn.lock","pnpm-lock.yaml",
+              "go.mod","go.sum","uv.lock","poetry.lock","Pipfile","Pipfile.lock",
+              "requirements.txt","requirements-dev.txt","setup.py","pyproject.toml",
+              "Cargo.lock","composer.lock","Gemfile","Gemfile.lock",
+              "packages.config","packages.lock.json","gradle.lockfile","pom.xml"
+            ] as $manifests
+            | .components |= ((. // []) | map(
+                . as $c
+                | ($c.name | basename) as $b
+                | if ($manifests | index($b))
+                     or ($b | test("(\\.lock|lock\\.json)$"; "i"))
+                  then $c + {__drop: "manifest/lock pseudo-component"}
+                  elif ($c.version // "") == ""
+                  then $c + {__drop: "versionless pseudo-component (module root)"}
+                  else $c end
+              ))
+          ' bom-raw.json > bom-marked.json
 
-          echo ""
+          echo "   dropped:"
+          jq -r '.components[] | select(.__drop) | "     - \(.name)  [\(.__drop)]"' bom-marked.json
+          jq '.components |= (map(select(.__drop | not)) | map(del(.__drop)))' bom-marked.json > bom.json
+          rm -f bom-marked.json
+
+          if [ ! -s bom.json ]; then
+            echo "❌ Error: cleaned SBOM is empty or missing"
+            exit 1
+          fi
+
+      # ── Added 2026-08-27 ─────────────────────────────────────────────────────
+      # Trivy resolves licences from manifests, not from installed packages.
+      # Two ecosystems in this repo therefore come back blank no matter what:
+      #   * ruby/Gemfile.lock carries no licence data at all  -> fast-polylines
+      #   * npm packages that omit "license" in package.json  -> polyline@0.2.0
+      # Both are permissive in reality (MIT and BSD-3-Clause; verified against
+      # rubygems.org and the package's own LICENSE file). They accounted for the
+      # other 2 of this repo's 3 HIGH findings. The enrichment script resolves
+      # them from the upstream registries and falls back to a curated, commented
+      # map. It never invents a licence: anything it cannot resolve stays blank
+      # and is listed for manual review.
+      - name: Enrich missing licences in SBOM
+        run: python3 scripts/enrich-licenses.py --bom bom.json
+
+      - name: Print SBOM statistics
+        run: |
           echo "📊 SBOM Statistics:"
-          cat bom.json | jq '{
+          jq '{
               totalComponents: (.components | length),
-              componentsWithLicenses: ([.components[] | select(.licenses)] | length)
-          }'
+              componentsWithLicenses: ([.components[] | select(.licenses)] | length),
+              componentsMissingLicenses: ([.components[] | select(.licenses | not)] | length)
+          }' bom.json
 
       - name: Check Dependency-Track credentials
         id: dt_check
@@ -192,6 +288,13 @@ jobs:
         if: github.event_name != 'pull_request' && steps.dt_check.outputs.upload == 'true'
         uses: DependencyTrack/gh-upload-sbom@48feab3080ff9e8f51f4d21861d9fc914eb744f5 # v3.1.0
         with:
+          # ⚠️  FLAG (2026-08-27): this posts the SBOM *and* the
+          # DEPENDENCYTRACK_API_KEY to a bare IP over cleartext HTTP.
+          # tollguru-engineering-utils already points at the TLS endpoint
+          # 'deptrack-api.mapup.ai:443'. This repo (and polyline, and both
+          # mobile apps) were never migrated. Switching needs confirmation
+          # that the DNS name resolves for this project, so it is flagged
+          # here rather than changed blind.
           serverhostname: '44.194.0.211'
           port: '8091'
           protocol: 'http'
