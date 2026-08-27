@@ -31,6 +31,7 @@ import sys
 import argparse
 import urllib.request
 import urllib.error
+import urllib.parse
 import time
 from typing import Optional, Dict, List, Tuple
 
@@ -233,6 +234,39 @@ def normalize_spdx(raw: str) -> Optional[str]:
     if len(raw) > 40 or "\n" in raw:
         return None
     return raw if raw else None
+
+
+# Distinctive phrases from the canonical licence texts. Some registries put the
+# ENTIRE licence body in the free-text `license` field instead of an SPDX id
+# (PyPI's polyline@2.0.4 does exactly this), which normalize_spdx correctly
+# refuses to treat as an identifier. Fingerprinting the text recovers those.
+# Deliberately conservative: every pattern below is a phrase that appears in
+# one licence family and not the others, and anything ambiguous returns None
+# so the component stays visibly unresolved rather than mislabelled.
+def identify_license_text(text: str) -> Optional[str]:
+    """Identify a licence from its full text. Returns None unless confident."""
+    if not text or len(text) < 120:
+        return None
+    t = " ".join(text.split()).lower()
+
+    if "apache license" in t and "version 2.0" in t:
+        return "Apache-2.0"
+    if "gnu lesser general public license" in t:
+        return "LGPL-3.0-only" if "version 3" in t else "LGPL-2.1-only"
+    if "gnu general public license" in t:
+        return "GPL-3.0-only" if "version 3" in t else "GPL-2.0-only"
+    if "mozilla public license" in t and "2.0" in t:
+        return "MPL-2.0"
+    if "permission to use, copy, modify, and/or distribute this software" in t:
+        return "ISC"
+    if "permission is hereby granted, free of charge" in t and "the software is provided" in t:
+        return "MIT"
+    if "redistributions of source code must retain" in t:
+        # The third clause is the only thing separating BSD-3 from BSD-2.
+        if "neither the name" in t:
+            return "BSD-3-Clause"
+        return "BSD-2-Clause"
+    return None
 
 
 def get_pkg_type(component: dict) -> str:
@@ -469,7 +503,35 @@ def fetch_pypi_license(name: str, version: str) -> Optional[str]:
         if cls in PYPI_CLASSIFIERS:
             return PYPI_CLASSIFIERS[cls]
 
-    return normalize_spdx(info.get("license") or "")
+    raw = info.get("license") or ""
+    return normalize_spdx(raw) or identify_license_text(raw)
+
+
+def fetch_golang_license(name: str, version: str) -> Optional[str]:
+    """
+    Fetch a Go module licence from deps.dev.
+
+    Go modules carry no licence field in go.mod — the licence lives in a
+    LICENSE file inside the module zip. The Trivy version pinned in CI does not
+    resolve them, so every Go dependency arrived unlicensed. deps.dev indexes
+    the module zips and returns SPDX ids.
+
+    A module with several LICENSE files (gopkg.in/yaml.v3 ships both MIT and
+    Apache-2.0, covering different files) is returned as an AND expression,
+    which is the accurate reading for per-file licensing.
+    """
+    mod = urllib.parse.quote(name, safe="")
+    data = fetch_json(
+        f"https://api.deps.dev/v3alpha/systems/go/packages/{mod}/versions/{version}"
+    )
+    if not data:
+        return None
+    licences = [l for l in (data.get("licenses") or []) if l and l != "non-standard"]
+    if not licences:
+        return None
+    if len(licences) == 1:
+        return normalize_spdx(licences[0])
+    return " AND ".join(sorted(normalize_spdx(l) or l for l in licences))
 
 
 def fetch_gem_license(name: str, version: str) -> Optional[str]:
@@ -558,6 +620,7 @@ FETCHERS = {
     "nuget": fetch_nuget_license,
     "pypi": fetch_pypi_license,
     "gem": fetch_gem_license,
+    "golang": fetch_golang_license,
 }
 
 
