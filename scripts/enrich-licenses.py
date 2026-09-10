@@ -27,6 +27,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import re
 import sys
 import argparse
 import urllib.request
@@ -147,6 +148,46 @@ ACCEPTED_EXCEPTIONS: Dict[str, Dict[str, str]] = {
         ),
         "reviewed": "2026-08-27",
     },
+    "pypi:certifi": {
+        "license": "MPL-2.0",
+        "scope": "runtime, but data-only (CA trust store)",
+        "reason": (
+            "certifi is the Mozilla CA root bundle repackaged for Python — it "
+            "carries no logic we link against, just the trust store, and it "
+            "arrives transitively via requests. MPL-2.0 is FILE-level copyleft: "
+            "obligations attach only to modified MPL files, and we consume it "
+            "byte-for-byte unmodified. Shipping it inside a Lambda is plain "
+            "redistribution of an unmodified MPL file, which MPL-2.0 permits "
+            "provided the source stays available — it is on PyPI and GitHub."
+        ),
+        "condition": (
+            "Holds while we do not edit the bundled cacert.pem or the certifi "
+            "sources. If we ever trim or add roots, that modified file must be "
+            "published under MPL-2.0."
+        ),
+        "reviewed": "2026-09-10",
+    },
+    "pypi:psycopg2-binary": {
+        "license": "LGPL-3.0-or-later",
+        "scope": "runtime (PostgreSQL driver, dynamically imported)",
+        "reason": (
+            "The PostgreSQL driver, a direct runtime dependency of the Lambdas. "
+            "Genuinely LGPL-3.0-or-later, plus psycopg2's own OpenSSL-linking "
+            "exception. Unlike geojson-validation — the other LGPL finding here, "
+            "which was one function call and was removed outright in PR #421 — "
+            "this is not practically replaceable. It does not need to be: the "
+            "LGPL's condition is that users can relink a modified version, and a "
+            "Python C extension imported at runtime is dynamic linking, so no "
+            "obligation attaches to our own code. We neither modify it nor "
+            "redistribute it under our own name."
+        ),
+        "condition": (
+            "Holds while psycopg2 is imported unmodified. Vendoring it, patching "
+            "it, or statically linking it into a single binary would change the "
+            "analysis and must be re-reviewed."
+        ),
+        "reviewed": "2026-09-10",
+    },
     "npm:@anthropic-ai/claude-agent-sdk": {
         "license": "LicenseRef-Anthropic-Commercial-ToS",
         "scope": "internal tooling only (not redistributed)",
@@ -218,9 +259,26 @@ def should_remove(component: dict) -> bool:
     return any(pat in name for pat in REMOVE_PATTERNS)
 
 
-def make_license_entry(spdx_id: str) -> List[dict]:
-    """Create a proper CycloneDX license entry."""
-    return [{"license": {"id": spdx_id}}]
+def is_spdx_expression(value: str) -> bool:
+    """True if the string is a compound SPDX expression rather than a bare id."""
+    return bool(re.search(r"\s+(AND|OR|WITH)\s+", value or "", re.I))
+
+
+def make_license_entry(spdx: str) -> List[dict]:
+    """
+    Create a CycloneDX license entry.
+
+    CycloneDX restricts `license.id` to a SINGLE id from the SPDX enumeration; a
+    compound expression has to go in `expression` instead. Putting an expression
+    in `license.id` produces a BOM that fails schema validation, and
+    Dependency-Track rejects the whole upload with an opaque HTTP 400 — so one
+    bad component silently blocks the entire SBOM, not just itself. That is
+    exactly what "Apache-2.0 AND MIT" (gopkg.in/yaml.v3) did here: it froze this
+    repo's dashboard row for two weeks while every scan looked green locally.
+    """
+    if is_spdx_expression(spdx):
+        return [{"expression": spdx}]
+    return [{"license": {"id": spdx}}]
 
 
 def normalize_spdx(raw: str) -> Optional[str]:
@@ -356,6 +414,75 @@ def licence_matches(component: dict, expected: str) -> bool:
     if not ids:
         return True  # nothing usable resolved: the exception supplies the licence
     return any(i == expected for i in ids)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Licences the scanner resolves to the WRONG value, with the verified value and
+# the evidence. Applied before exceptions, so an exception can be written
+# against the correct licence. Keyed "pkg-type:name"; `from` must match what the
+# scanner produced, so if upstream metadata improves this stops firing instead
+# of silently overriding a now-correct value.
+# ──────────────────────────────────────────────────────────────────────────────
+CORRECTED_LICENSES: Dict[str, Dict[str, str]] = {
+    "pypi:psycopg2-binary": {
+        "from": "LGPL-2.1-only",
+        "to": "LGPL-3.0-or-later",
+        "why": (
+            "PyPI declares only the free-text 'LGPL with exceptions' and the "
+            "generic LGPL trove classifier, so the scanner guessed a version and "
+            "guessed wrong. psycopg2's own LICENSE states 'either version 3 of "
+            "the License, or (at your option) any later version', plus a special "
+            "exception permitting linking with OpenSSL. Verified against "
+            "github.com/psycopg/psycopg2/blob/master/LICENSE."
+        ),
+    },
+}
+
+
+def normalize_license_shapes(components: list) -> int:
+    """
+    Move any compound expression out of `license.id` and into `expression`.
+
+    make_license_entry now emits the right shape, but that only governs entries
+    this script creates. Trivy (or a future fetcher) can put an expression in
+    `license.id` too, and CycloneDX only permits a single enumerated SPDX id
+    there. Since Dependency-Track rejects the ENTIRE upload with HTTP 400 over
+    one malformed component, this repairs the shape wherever it comes from
+    rather than trusting every producer to get it right.
+    """
+    fixed = 0
+    for c in components:
+        licences = c.get("licenses") or []
+        for i, lic in enumerate(licences):
+            obj = lic.get("license", {}) or {}
+            value = obj.get("id")
+            if value and is_spdx_expression(value):
+                licences[i] = {"expression": value}
+                fixed += 1
+    if fixed:
+        print(f"\n🩹 Rewrote {fixed} licence entr(ies) from license.id to expression")
+    return fixed
+
+
+def apply_corrections(components: list, dry_run: bool = False) -> list:
+    """Replace provably wrong resolved licences with verified ones."""
+    fixed = []
+    for c in components:
+        rec = CORRECTED_LICENSES.get(f"{get_pkg_type(c)}:{full_name(c)}")
+        if not rec:
+            continue
+        for lic in c.get("licenses") or []:
+            obj = lic.get("license", {}) or {}
+            if obj.get("id") == rec["from"]:
+                if not dry_run:
+                    obj["id"] = rec["to"]
+                fixed.append((full_name(c), c.get("version", ""), rec))
+    if fixed:
+        print(f"\n🔧 Corrected {len(fixed)} mis-resolved licence(s):")
+        for name, version, rec in fixed:
+            print(f"   - {name}@{version}: {rec['from']} -> {rec['to']}")
+            print(f"     {' '.join(rec['why'].split())}")
+    return fixed
 
 
 def lookup_exception(pkg_type: str, name: str) -> Optional[Dict[str, str]]:
@@ -688,6 +815,14 @@ def enrich_bom(bom_path: str, dry_run: bool = False) -> None:
     removed = total_before - len(filtered)
     if removed:
         print(f"\n🗑️  Removed {removed} config-file pseudo-component(s)")
+
+    # Pass -1: repair malformed licence shapes from ANY producer before they
+    # reach Dependency-Track, which 400s the whole upload over a single one.
+    normalize_license_shapes(filtered)
+
+    # Pass 0: fix licences the scanner resolved incorrectly, so the exception
+    # below is written against the licence the package actually has.
+    apply_corrections(filtered, dry_run)
 
     # Pass 1: stamp reviewed-and-accepted exceptions. This runs over ALL
     # components, not just licence-less ones — MPL-2.0 and FSL-1.1-MIT are
