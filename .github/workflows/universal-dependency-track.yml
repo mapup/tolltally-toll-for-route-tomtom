@@ -278,6 +278,49 @@ jobs:
             echo "upload=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # ── Added 2026-09-10 ─────────────────────────────────────────────────────
+      # Dependency-Track validates the BOM against the CycloneDX schema and
+      # rejects the WHOLE upload with a bare "HTTP 400" if any single component
+      # is malformed. It does not say which. On 2026-08-27 one component
+      # (gopkg.in/yaml.v3, whose licence went into `license.id` as the
+      # expression "Apache-2.0 AND MIT") did exactly that, and because the scan
+      # itself kept passing, this repo's dashboard row silently froze for two
+      # weeks while every run looked fine apart from a red cross at the end.
+      # Checking here turns that into a named component and a clear message at
+      # the point the BOM is built.
+      - name: Validate BOM before upload
+        run: |
+          python3 - <<'PY'
+          import json, re, sys
+
+          bom = json.load(open("bom.json"))
+          comps = bom.get("components") or []
+          problems = []
+
+          expr = re.compile(r"\s+(AND|OR|WITH)\s+", re.I)
+          for c in comps:
+              who = f"{c.get('group','')}/{c.get('name')}@{c.get('version','')}"
+              for lic in c.get("licenses") or []:
+                  obj = lic.get("license") or {}
+                  # CycloneDX allows a single SPDX id here, never an expression.
+                  if obj.get("id") and expr.search(obj["id"]):
+                      problems.append(f"{who}: expression in license.id -> {obj['id']!r}")
+                  # A licence entry must carry something.
+                  if not obj.get("id") and not obj.get("name") and not lic.get("expression"):
+                      problems.append(f"{who}: empty licence entry")
+
+          if not comps:
+              print("⚠️  BOM has no components — nothing to upload, but not malformed.")
+
+          if problems:
+              print("❌ BOM would be rejected by Dependency-Track (HTTP 400):")
+              for p in problems:
+                  print(f"     - {p}")
+              sys.exit(1)
+
+          print(f"✅ BOM validates: {len(comps)} components, no malformed licence entries")
+          PY
+
       - name: Upload BOM to Dependency-Track
         # Two reasons this must not run on pull requests:
         #  1. projectversion below is hardcoded to the default branch, so a PR
